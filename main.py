@@ -52,21 +52,24 @@ prog_bar = args.progressBar
 if verbose:
   print(args)
 
+TIME_FORMAT="%Y-%m-%d %H:%M:%S"
+KEYBOARD_INTERRUPT_MSG="\nBye!\n"
+
 # Log the tracks not found in shazam
-def writeLog(dst_dir,logFilename,trackFilename):
-  d = time.strftime("%Y-%m-%d %H:%M:%S")
-  with open(dst_dir+"/"+logFilename+".log", "a") as log:
-      log.write("["+d+"]  --- "+trackFilename+'\n')
+def write_log(dst_dir,log_filename,track_filename):
+  d = time.strftime(TIME_FORMAT)
+  with open(dst_dir+"/"+log_filename+".log", "a") as log:
+      log.write("["+d+"]  --- "+track_filename+'\n')
 
 # Autmatic tag the rename files.. but i'm to lazy now to write a class to deal with tags, so I used id3v2 :) apt-get install id3v2
-def add_tag(fileName,artist,songName,genres):
+def add_tag(file_name,artist,song_name,genres):
   try:
       from subprocess import DEVNULL  # Python 3.
   except ImportError:
       DEVNULL = open(os.devnull, 'wb')
-  p1 = subprocess.Popen(["/usr/bin/id3v2", "-D", fileName], stdout=DEVNULL, stderr=DEVNULL)
+  p1 = subprocess.Popen(["/usr/bin/id3v2", "-D", file_name], stdout=DEVNULL, stderr=DEVNULL)
   p1.wait()
-  p2 = subprocess.Popen(["/usr/bin/id3v2", "-a", artist, "-t", songName, "-g", genres, fileName ])
+  p2 = subprocess.Popen(["/usr/bin/id3v2", "-a", artist, "-t", song_name, "-g", genres, file_name ])
   p2.wait()
 
 # Small function that parses the video url from shazam to retrive the youtube video. Just playing with things while time fly's by.
@@ -80,24 +83,29 @@ async def get_details(mp3):
   return(await shazam.recognize_song(mp3))
 
 
-def non_parsed_files(file_size,files):
+def log_unsuitable_file(file_size,file):
   if file_size >= max_file_size:
-    writeLog(dst_dir,"files_larger_then_"+str(max_file_size)+"MB",files)
+    write_log(dst_dir,"files_larger_than_"+str(max_file_size)+"MB",file)
   if file_size <= min_file_size:
-    writeLog(dst_dir,"files_smaller_then_"+str(min_file_size)+"MB",files)
+    write_log(dst_dir,"files_smaller_than_"+str(min_file_size)+"MB",file)
 
+def is_file_within_size_limits(file_size):
+  return file_size < max_file_size and file_size > min_file_size
+
+def get_file_size_in_mb(file):
+  return os.stat(file).st_size / (1024 * 1024)
 
 def info_logs():
   os.system('clear')
   print("\n")
-  print("[ PROCESS STARTED ] at:\t"+time.strftime("%Y-%m-%d %H:%M:%S")+"\n\n")
-  print("Not founded tracks log:\t"+dst_dir+"/notFoundTracks.log")
-  print("Excluded large files:\t"+dst_dir+"/files_larger_then_"+str(max_file_size)+"MB.log")
-  print("Excluded small files:\t"+dst_dir+"/files_smaller_then_"+str(min_file_size)+"MB.log\n\n\n\n")
+  print("[ PROCESS STARTED ] at:\t"+time.strftime(TIME_FORMAT)+"\n\n")
+  print("Unidentified tracks log:\t"+dst_dir+"/unidentified_tracks.log")
+  print("Excluded large files:\t"+dst_dir+"/files_larger_than_"+str(max_file_size)+"MB.log")
+  print("Excluded small files:\t"+dst_dir+"/files_smaller_than_"+str(min_file_size)+"MB.log\n\n\n\n")
     
 # Some parsing things. Returns a clean dict.
 def parse_meta(mp3):
-  start = time.time()
+  start_time = time.time()
   loop = asyncio.get_event_loop()
   out = loop.run_until_complete(get_details(mp3))
   try:
@@ -110,31 +118,31 @@ def parse_meta(mp3):
     genres = out["track"]["genres"]["primary"]
     # shazam_video_url=str([ty["youtubeurl"] for ty in out["track"]["sections"] if ty["type"] == "VIDEO"])[2:-2]
     # youtube_url=str([uri["uri"] for uri in get_youtube_url(str(shazam_video_url))["actions"]])[2:-2]
-  end = time.time()
-  elapsed_time = end - start
+  end_time = time.time()
+  elapsed_time = end_time - start_time
   return {"artist":artist,
           "title":title,
           "genres":genres,
           "elapsed_time": elapsed_time
           }
+
 ## Progress bar with clean stdio 
 def p_bar(all_files):
   info_logs()
   with alive_bar(len(all_files)) as bar:
     for file in all_files:
-        file_size = os.stat(file).st_size / (1024 * 1024)
-        non_parsed_files(file_size,file)
-        if file_size < max_file_size and file_size > min_file_size:
+        file_size = get_file_size_in_mb(file)
+        if is_file_within_size_limits(file_size):
           try:
             data = parse_meta(file)
           # No track found on Shazam... Log and don't touch the files.
           # Although it's possible to find the tracks in Music Shops under "What are you listing to dude?" category.
           except KeyboardInterrupt:
-            print("\nBye!\n")
+            print(KEYBOARD_INTERRUPT_MSG)
             sys.exit(0)
           # write not found metadata on shazam to log  
-          except:
-              writeLog(dst_dir,"notFoundTracks",file)
+          except Exception:
+              write_log(dst_dir,"unidentified_tracks",file)
           else:
             data = parse_meta(file)
             artist = data["artist"].replace("/","-")
@@ -154,16 +162,18 @@ def p_bar(all_files):
               os.makedirs(generated_path)
               os.rename(file,generated_path+"/"+generated_filename)
               add_tag(absolute_filepath,artist,title,genres)
-        time.sleep(wait_time)
-        bar()
-  print ("\n\n[ PROCESS COMPLETED ] at:\t"+time.strftime("%Y-%m-%d %H:%M:%S"))
+          time.sleep(wait_time)
+          bar()
+        else:
+          log_unsuitable_file(file_size,file) 
+  print ("\n\n[ PROCESS COMPLETED ] at:\t"+time.strftime(TIME_FORMAT))
+
 # Verbose and normal function for troubleshooting (dirty-dirty)
 def st_out(all_files):
   info_logs()
   for file in all_files:
-      file_size = os.stat(file).st_size / (1024 * 1024)
-      non_parsed_files(file_size,file)
-      if file_size < max_file_size and file_size > min_file_size:
+      file_size = get_file_size_in_mb(file)
+      if is_file_within_size_limits(file_size):
         # Manage exceptions inluding not found metadata file and ctrl-c
         try:
           data = parse_meta(file)
@@ -172,11 +182,11 @@ def st_out(all_files):
         # No track found on Shazam... Log and don't touch the files.
         # Although it's possible to find the tracks in Music Shops under "What are you listing to dude?" category.
         except KeyboardInterrupt:
-          print("\nBye!\n")
+          print(KEYBOARD_INTERRUPT_MSG)
           sys.exit(0)
-        except:
+        except Exception:
             # write not found metadata on shazam to log and print to stdio
-            writeLog(dst_dir,"notFoundTracks",file)
+            write_log(dst_dir,"unidentified_tracks",file)
             print("[ KO ] --- "+file+" --- Oops! track info not found on Shazam.")
         else:
           data = parse_meta(file)
@@ -185,7 +195,7 @@ def st_out(all_files):
           genres = data["genres"]
           elapsed_time = data["elapsed_time"]
           if verbose:
-            print("Original filename found: "+str(file)+" - "+str(round(os.stat(file).st_size / (1024 * 1024),2))+" MB")
+            print("Original filename found: "+str(file)+" - "+str(round(file_size,2))+" MB")
             print("[ OK ] --- Information found: " +str(data))
             print("[ OK ] --- API Call Time: "+str(elapsed_time))
           
@@ -213,9 +223,11 @@ def st_out(all_files):
             if verbose:
               print("The new directory "+generated_path+" is created!")
               print("New file path and name: "+absolute_filepath+"\n")
-      time.sleep(wait_time)
+        time.sleep(wait_time)
+      else:
+        log_unsuitable_file(file_size,file)
   info_logs()
-  print ("\n\n[ PROCESS COMPLETED ] at:\t"+time.strftime("%Y-%m-%d %H:%M:%S"))
+  print ("\n\n[ PROCESS COMPLETED ] at:\t"+time.strftime(TIME_FORMAT))
 
 
 # aaand the main func calling the previous functions just to do something with them 
@@ -233,6 +245,6 @@ try:
     main()
 # CTRL-C to save the day exit and funny output.
 except KeyboardInterrupt:
-    print("\nBye!\n")
+    print(KEYBOARD_INTERRUPT_MSG)
     sys.exit(0)
 
