@@ -59,14 +59,14 @@ KEYBOARD_INTERRUPT_MSG="\nBye!\n"
 def write_log(dst_dir,log_filename,track_filename):
   d = time.strftime(TIME_FORMAT)
   with open(dst_dir+"/"+log_filename+".log", "a") as log:
-      log.write("["+d+"]  --- "+track_filename+'\n')
+    log.write("["+d+"]  --- "+track_filename+'\n')
 
 # Autmatic tag the rename files.. but i'm to lazy now to write a class to deal with tags, so I used id3v2 :) apt-get install id3v2
 def add_tag(file_name,artist,song_name,genres):
   try:
-      from subprocess import DEVNULL  # Python 3.
+    from subprocess import DEVNULL  # Python 3.
   except ImportError:
-      DEVNULL = open(os.devnull, 'wb')
+    DEVNULL = open(os.devnull, 'wb')
   p1 = subprocess.Popen(["/usr/bin/id3v2", "-D", file_name], stdout=DEVNULL, stderr=DEVNULL)
   p1.wait()
   p2 = subprocess.Popen(["/usr/bin/id3v2", "-a", artist, "-t", song_name, "-g", genres, file_name ])
@@ -82,7 +82,7 @@ async def get_details(mp3):
   shazam = Shazam()
   return(await shazam.recognize_song(mp3))
 
-
+# If song doesn't fall within the size bounds, write the song to logs
 def log_unsuitable_file(file_size,file):
   if file_size >= max_file_size:
     write_log(dst_dir,"files_larger_than_"+str(max_file_size)+"MB",file)
@@ -94,6 +94,42 @@ def is_file_within_size_limits(file_size):
 
 def get_file_size_in_mb(file):
   return os.stat(file).st_size / (1024 * 1024)
+
+# When song is identified, process it based on metadata tags
+def process_identified_song(data):
+  artist = data["artist"].replace("/","-")
+  title = data["title"].replace("/","-")
+  genres = data["genres"]
+  elapsed_time = data["elapsed_time"]
+  if verbose:
+    print("Original filename found: "+str(file)+" - "+str(round(file_size,2))+" MB")
+    print("[ OK ] --- Information found: " +str(data))
+    print("[ OK ] --- API Call Time: "+str(elapsed_time))
+  
+  # Check if the new path including the genres exist.
+  # And if it does, it will move the file there,
+  # else will create and rename and move the file and tag it and show some info.
+  generated_path=dst_dir+"/"+genres+"/"+artist
+  generated_filename=artist+" - "+title+".mp3"
+  absolute_filepath=generated_path+"/"+generated_filename
+  if verbose:
+    print("generated_path: "+generated_path)
+    print("generated_filename: "+generated_filename)
+    print("absolute_filepath: "+absolute_filepath)
+  if os.path.exists(generated_path):
+    os.rename(file,generated_path+"/"+generated_filename)
+    add_tag(absolute_filepath,artist,title,genres)
+    if verbose:
+      print("Path: "+generated_path+" already exists!")
+      print("New file path and name: "+absolute_filepath+"\n")
+  else:
+    print("[ OK ] --- "+absolute_filepath+" generated.")
+    os.makedirs(generated_path)
+    os.rename(file,generated_path+"/"+generated_filename)
+    add_tag(absolute_filepath,artist,title,genres)
+    if verbose:
+      print("The new directory "+generated_path+" is created!")
+      print("New file path and name: "+absolute_filepath+"\n")
 
 def info_logs():
   os.system('clear')
@@ -131,102 +167,46 @@ def p_bar(all_files):
   info_logs()
   with alive_bar(len(all_files)) as bar:
     for file in all_files:
-        file_size = get_file_size_in_mb(file)
-        if is_file_within_size_limits(file_size):
-          try:
-            data = parse_meta(file)
-          # No track found on Shazam... Log and don't touch the files.
-          # Although it's possible to find the tracks in Music Shops under "What are you listing to dude?" category.
-          except KeyboardInterrupt:
-            print(KEYBOARD_INTERRUPT_MSG)
-            sys.exit(0)
-          # write not found metadata on shazam to log  
-          except Exception:
-              write_log(dst_dir,"unidentified_tracks",file)
-          else:
-            data = parse_meta(file)
-            artist = data["artist"].replace("/","-")
-            title = data["title"].replace("/","-")
-            genres = data["genres"]
-            # videoUrl = data["videoUrl"]
-            # Check if the new path including the genres exist.
-            # And if it does, it will move the file there,
-            # else will create and rename and move the file and tag it and show some info.
-            generated_path=dst_dir+"/"+genres+"/"+artist
-            generated_filename=artist+" - "+title+".mp3"
-            absolute_filepath=generated_path+"/"+generated_filename
-            if os.path.exists(generated_path):
-              os.rename(file,generated_path+"/"+generated_filename)
-              add_tag(absolute_filepath,artist,title,genres)
-            else:
-              os.makedirs(generated_path)
-              os.rename(file,generated_path+"/"+generated_filename)
-              add_tag(absolute_filepath,artist,title,genres)
-          time.sleep(wait_time)
-          bar()
+      file_size = get_file_size_in_mb(file)
+      if is_file_within_size_limits(file_size):
+        data = []
+        try:
+          data = parse_meta(file)
+        except KeyboardInterrupt:
+          print(KEYBOARD_INTERRUPT_MSG)
+          sys.exit(0)
+        except Exception:
+          write_log(dst_dir,"unidentified_tracks",file)
         else:
-          log_unsuitable_file(file_size,file) 
+          process_identified_song(data)
+        time.sleep(wait_time)
+        bar()
+      else:
+        log_unsuitable_file(file_size,file) 
   print ("\n\n[ PROCESS COMPLETED ] at:\t"+time.strftime(TIME_FORMAT))
 
 # Verbose and normal function for troubleshooting (dirty-dirty)
 def st_out(all_files):
   info_logs()
   for file in all_files:
-      file_size = get_file_size_in_mb(file)
-      if is_file_within_size_limits(file_size):
-        # Manage exceptions inluding not found metadata file and ctrl-c
-        try:
-          data = parse_meta(file)
-          if verbose:
-            print("[ OK ] --- try: "+str(data["elapsed_time"]))
-        # No track found on Shazam... Log and don't touch the files.
-        # Although it's possible to find the tracks in Music Shops under "What are you listing to dude?" category.
-        except KeyboardInterrupt:
-          print(KEYBOARD_INTERRUPT_MSG)
-          sys.exit(0)
-        except Exception:
-            # write not found metadata on shazam to log and print to stdio
-            write_log(dst_dir,"unidentified_tracks",file)
-            print("[ KO ] --- "+file+" --- Oops! track info not found on Shazam.")
-        else:
-          data = parse_meta(file)
-          artist = data["artist"].replace("/","-")
-          title = data["title"].replace("/","-")
-          genres = data["genres"]
-          elapsed_time = data["elapsed_time"]
-          if verbose:
-            print("Original filename found: "+str(file)+" - "+str(round(file_size,2))+" MB")
-            print("[ OK ] --- Information found: " +str(data))
-            print("[ OK ] --- API Call Time: "+str(elapsed_time))
-          
-          # Check if the new path including the genres exist.
-          # And if it does, it will move the file there,
-          # else will create and rename and move the file and tag it and show some info.
-          generated_path=dst_dir+"/"+genres+"/"+artist
-          generated_filename=artist+" - "+title+".mp3"
-          absolute_filepath=generated_path+"/"+generated_filename
-          if verbose:
-            print("generated_path: "+generated_path)
-            print("generated_filename: "+generated_filename)
-            print("absolute_filepath: "+absolute_filepath)
-          if os.path.exists(generated_path):
-            os.rename(file,generated_path+"/"+generated_filename)
-            add_tag(absolute_filepath,artist,title,genres)
-            if verbose:
-              print("Path: "+generated_path+" already exists!")
-              print("New file path and name: "+absolute_filepath+"\n")
-          else:
-            print("[ OK ] --- "+absolute_filepath+" generated.")
-            os.makedirs(generated_path)
-            os.rename(file,generated_path+"/"+generated_filename)
-            add_tag(absolute_filepath,artist,title,genres)
-            if verbose:
-              print("The new directory "+generated_path+" is created!")
-              print("New file path and name: "+absolute_filepath+"\n")
-        time.sleep(wait_time)
+    file_size = get_file_size_in_mb(file)
+    if is_file_within_size_limits(file_size):
+      data = []
+      try:
+        data = parse_meta(file)
+        if verbose:
+          print("[ OK ] --- try: "+str(data["elapsed_time"]))
+      except KeyboardInterrupt:
+        print(KEYBOARD_INTERRUPT_MSG)
+        sys.exit(0)
+      except Exception:
+          write_log(dst_dir,"unidentified_tracks",file)
+          print("[ KO ] --- "+file+" --- Oops! track info not found on Shazam.")
       else:
-        log_unsuitable_file(file_size,file)
-  info_logs()
+        process_identified_song(data)
+      time.sleep(wait_time)
+    else:
+      log_unsuitable_file(file_size,file)
   print ("\n\n[ PROCESS COMPLETED ] at:\t"+time.strftime(TIME_FORMAT))
 
 
