@@ -211,7 +211,7 @@ def st_out(all_files):
           write_log(dst_dir,"unidentified_tracks",file)
           print("[ KO ] --- "+file+" --- Oops! track info not found on Shazam.")
       else:
-        process_identified_song(data)
+        process_identified_song(file, data)
       time.sleep(wait_time)
     else:
       log_unsuitable_file(file_size,file)
