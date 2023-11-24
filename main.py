@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 import asyncio, requests, glob, sys, os, time, argparse, subprocess
 from mutagen.easyid3 import EasyID3
-from mutagen import File, ID3NoHeaderError
+from mutagen import File
+from mutagen.id3 import ID3NoHeaderError
 from shazamio import Shazam
 from alive_progress import alive_bar
 
