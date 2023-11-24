@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 import asyncio, requests, glob, sys, os, time, argparse, subprocess
+from mutagen.easyid3 import EasyID3
+from mutagen import File, ID3NoHeaderError
 from shazamio import Shazam
 from alive_progress import alive_bar
 
@@ -18,6 +20,7 @@ from alive_progress import alive_bar
 #[] - add gui
 #[] - add custom log path
 #[] - add escaping for angry filenames
+#[] - add multithreading for super speed
 #[] - 
 #[x] - add comments to code
 #[x] - add onetrack albums hack 
@@ -26,6 +29,7 @@ from alive_progress import alive_bar
 #[x] - add "not found" logging
 #[x] - add destination path
 #[x] - add opts
+#[x] - move from id3v2 to mutagen library
 
 # Options section for passing arguments
 parser = argparse.ArgumentParser()
@@ -61,16 +65,19 @@ def write_log(dst_dir,log_filename,track_filename):
   with open(dst_dir+"/"+log_filename+".log", "a") as log:
     log.write("["+d+"]  --- "+track_filename+'\n')
 
-# Autmatic tag the rename files.. but i'm to lazy now to write a class to deal with tags, so I used id3v2 :) apt-get install id3v2
-def add_tag(file_name,artist,song_name,genres):
+# Automatically clean and tag the renamed files
+def add_tag(file_name,artist,song_name,primary_genre):
   try:
-    from subprocess import DEVNULL  # Python 3.
-  except ImportError:
-    DEVNULL = open(os.devnull, 'wb')
-  p1 = subprocess.Popen(["/usr/bin/id3v2", "-D", file_name], stdout=DEVNULL, stderr=DEVNULL)
-  p1.wait()
-  p2 = subprocess.Popen(["/usr/bin/id3v2", "-a", artist, "-t", song_name, "-g", genres, file_name ])
-  p2.wait()
+    track_tags = EasyID3(file_name)
+  except ID3NoHeaderError:
+    track_tags = File(file_name, easy=True)
+    track_tags.add_tags()
+
+  track_tags["title"] = song_name
+  track_tags["artist"] = artist
+  track_tags["genre"] = primary_genre
+
+  track_tags.save(file_name)
 
 # Small function that parses the video url from shazam to retrive the youtube video. Just playing with things while time fly's by.
 def get_youtube_url(shazam_video_url):
