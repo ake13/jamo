@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import asyncio, requests, glob, sys, os, time, argparse, subprocess
 from mutagen.easyid3 import EasyID3
+import mutagen
 from shazamio import Shazam
 from alive_progress import alive_bar
 
@@ -19,6 +20,7 @@ from alive_progress import alive_bar
 #[] - add gui
 #[] - add custom log path
 #[] - add escaping for angry filenames
+#[] - add multithreading for super speed
 #[] - 
 #[x] - add comments to code
 #[x] - add onetrack albums hack 
@@ -27,6 +29,7 @@ from alive_progress import alive_bar
 #[x] - add "not found" logging
 #[x] - add destination path
 #[x] - add opts
+#[x] - move from id3v2 to mutagen library
 
 # Options section for passing arguments
 parser = argparse.ArgumentParser()
@@ -64,12 +67,17 @@ def write_log(dst_dir,log_filename,track_filename):
 
 # Automatically clean and tag the renamed files
 def add_tag(file_name,artist,song_name,primary_genre):
-  track_tags = EasyID3(file_name)
-  track_tags.delete()
+  try:
+    track_tags = EasyID3(file_name)
+  except ID3NoHeaderError:
+    track_tags = mutagen.File(file_name, easy=True)
+    track_tags.add_tags()
+
   track_tags["title"] = song_name
   track_tags["artist"] = artist
   track_tags["genre"] = primary_genre
-  track_tags.save()
+
+  track_tags.save(file_name)
 
 # Small function that parses the video url from shazam to retrive the youtube video. Just playing with things while time fly's by.
 def get_youtube_url(shazam_video_url):
