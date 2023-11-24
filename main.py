@@ -63,7 +63,7 @@ def write_log(dst_dir,log_filename,track_filename):
       log.write("["+d+"]  --- "+track_filename+'\n')
 
 # Automatically clean and tag the renamed files
-def add_tag(artist,song_name,primary_genre,file_name):
+def add_tag(file_name,artist,song_name,primary_genre):
   track_tags = EasyID3(file_name)
   track_tags.delete()
   track_tags["title"] = song_name
