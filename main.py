@@ -96,7 +96,7 @@ def get_file_size_in_mb(file):
   return os.stat(file).st_size / (1024 * 1024)
 
 # When song is identified, process it based on metadata tags
-def process_identified_song(data):
+def process_identified_song(file, data):
   artist = data["artist"].replace("/","-")
   title = data["title"].replace("/","-")
   genres = data["genres"]
@@ -178,7 +178,7 @@ def p_bar(all_files):
         except Exception:
           write_log(dst_dir,"unidentified_tracks",file)
         else:
-          process_identified_song(data)
+          process_identified_song(file, data)
         time.sleep(wait_time)
         bar()
       else:
