@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import asyncio, requests, glob, sys, os, time, argparse, subprocess
 from mutagen.easyid3 import EasyID3
-import mutagen
+from mutagen import File, ID3NoHeaderError
 from shazamio import Shazam
 from alive_progress import alive_bar
 
@@ -70,7 +70,7 @@ def add_tag(file_name,artist,song_name,primary_genre):
   try:
     track_tags = EasyID3(file_name)
   except ID3NoHeaderError:
-    track_tags = mutagen.File(file_name, easy=True)
+    track_tags = File(file_name, easy=True)
     track_tags.add_tags()
 
   track_tags["title"] = song_name
