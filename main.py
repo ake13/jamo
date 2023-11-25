@@ -21,7 +21,6 @@ from multiprocess import Pool
 #[] - add gui
 #[] - add custom log path
 #[] - add escaping for angry filenames
-#[] - add multithreading for super speed
 #[] - 
 #[x] - add comments to code
 #[x] - add onetrack albums hack 
@@ -31,6 +30,7 @@ from multiprocess import Pool
 #[x] - add destination path
 #[x] - add opts
 #[x] - move from id3v2 to mutagen library
+#[x] - add multithreading for super speed
 
 # Options section for passing arguments
 parser = argparse.ArgumentParser()
