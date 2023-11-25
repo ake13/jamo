@@ -5,7 +5,7 @@ from mutagen import File
 from mutagen.id3 import ID3NoHeaderError
 from shazamio import Shazam
 from alive_progress import alive_bar
-
+from multiprocess import Pool
 
 # Why I build this script?
 # Answer because I'm to lazy to go through nested folers and albums to tag and rename files.
@@ -170,53 +170,49 @@ def parse_meta(mp3):
           "elapsed_time": elapsed_time
           }
 
+def parse_and_process(file):
+  file_size = get_file_size_in_mb(file)
+  if is_file_within_size_limits(file_size):
+    data = []
+    try:
+      data = parse_meta(file)
+      if verbose:
+        print("[ OK ] --- try: "+str(data["elapsed_time"]))
+    except KeyboardInterrupt:
+      print(KEYBOARD_INTERRUPT_MSG)
+      sys.exit(0)
+    except Exception:
+        write_log(dst_dir,"unidentified_tracks",file)
+        print("[ KO ] --- "+file+" --- Oops! track info not found on Shazam.")
+    else:
+      process_identified_song(file, data)
+    time.sleep(wait_time)
+  else:
+    log_unsuitable_file(file_size,file)
+
 ## Progress bar with clean stdio 
 def p_bar(all_files):
   info_logs()
   with alive_bar(len(all_files)) as bar:
     for file in all_files:
-      file_size = get_file_size_in_mb(file)
-      if is_file_within_size_limits(file_size):
-        data = []
-        try:
-          data = parse_meta(file)
-        except KeyboardInterrupt:
-          print(KEYBOARD_INTERRUPT_MSG)
-          sys.exit(0)
-        except Exception:
-          write_log(dst_dir,"unidentified_tracks",file)
-        else:
-          process_identified_song(file, data)
-        time.sleep(wait_time)
-        bar()
-      else:
-        log_unsuitable_file(file_size,file) 
+      parse_and_process(file)
+      bar()
+
   print ("\n\n[ PROCESS COMPLETED ] at:\t"+time.strftime(TIME_FORMAT))
 
 # Verbose and normal function for troubleshooting (dirty-dirty)
+# Deprecated in favour of mt_out, the multithreaded counterpart
 def st_out(all_files):
   info_logs()
   for file in all_files:
-    file_size = get_file_size_in_mb(file)
-    if is_file_within_size_limits(file_size):
-      data = []
-      try:
-        data = parse_meta(file)
-        if verbose:
-          print("[ OK ] --- try: "+str(data["elapsed_time"]))
-      except KeyboardInterrupt:
-        print(KEYBOARD_INTERRUPT_MSG)
-        sys.exit(0)
-      except Exception:
-          write_log(dst_dir,"unidentified_tracks",file)
-          print("[ KO ] --- "+file+" --- Oops! track info not found on Shazam.")
-      else:
-        process_identified_song(file, data)
-      time.sleep(wait_time)
-    else:
-      log_unsuitable_file(file_size,file)
+    parse_and_process(file)
   print ("\n\n[ PROCESS COMPLETED ] at:\t"+time.strftime(TIME_FORMAT))
 
+def mt_out(all_files):
+  info_logs()
+  pool = Pool(8)
+  pool.map(parse_and_process, all_files)
+  print ("\n\n[ PROCESS COMPLETED ] at:\t"+time.strftime(TIME_FORMAT))
 
 # aaand the main func calling the previous functions just to do something with them 
 def main():
@@ -225,9 +221,8 @@ def main():
   if prog_bar:
     p_bar(all_files)
   else:
-    st_out(all_files)
+    mt_out(all_files)
 
-   
 try:
   if __name__ == "__main__":
     main()
